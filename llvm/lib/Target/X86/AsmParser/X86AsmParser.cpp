@@ -2875,6 +2875,72 @@ bool X86AsmParser::processInstruction(MCInst &Inst, const OperandVector &Ops)
     Inst.setOpcode(NewOpc);
     return true;
   }
+
+  // If possible use mov instead of movabs
+  // moveabs reg, [mem]
+  case X86::MOV8ao64:
+  case X86::MOV16ao64:
+  case X86::MOV32ao64:
+  case X86::MOV64ao64:
+  // movabs [mem], reg
+  case X86::MOV8o64a:
+  case X86::MOV16o64a:
+  case X86::MOV32o64a:
+  case X86::MOV64o64a: {
+    bool DoConversion = false;
+    unsigned OrigOpc = Inst.getOpcode();
+    #define ABS_SUB(a, b) (a < b? b - a: a - b)
+    // memory target is close enough for a RIP-relative conversion
+    if (ABS_SUB(Inst.getAddress(), (uint64_t)Inst.getOperand(0).getImm()) < 2 * (1UL << 30))
+      DoConversion = true;
+    // segment register used in mem ref (eg. cs/fs/ds/gs/ss)
+    else if (Inst.getOperand(1).isReg())
+        switch (Inst.getOperand(1).getReg()) {
+        default: break;
+        case X86::CS:
+        case X86::SS:
+        case X86::DS:
+        case X86::ES:
+        case X86::FS:
+        case X86::GS: DoConversion = true;
+        }
+    if (!DoConversion)
+      return false;
+    Inst.clear();
+    X86Operand &OpA = static_cast<X86Operand &>(*Ops[1]);
+    X86Operand &OpB = static_cast<X86Operand &>(*Ops[2]);
+    switch(OrigOpc) {
+    default: llvm_unreachable("Incomplete op override");
+    case X86::MOV8ao64:
+    case X86::MOV16ao64:
+    case X86::MOV32ao64:
+    case X86::MOV64ao64: {
+      OpA.addRegOperands(Inst, 1);  // rax/eax/ax/al
+      OpB.addMemOperands(Inst, 5);  // mem address
+      break;
+      }
+    case X86::MOV8o64a:
+    case X86::MOV16o64a:
+    case X86::MOV32o64a:
+    case X86::MOV64o64a: {
+      OpA.addMemOperands(Inst, 5);  // mem address
+      OpB.addRegOperands(Inst, 1);  // rax/eax/ax/al
+      break;
+      }
+    }
+    switch(OrigOpc) {
+    default: llvm_unreachable("Incomplete op override");
+    case X86::MOV8ao64:  Inst.setOpcode(X86::MOV8rm); break;
+    case X86::MOV16ao64: Inst.setOpcode(X86::MOV16rm); break;
+    case X86::MOV32ao64: Inst.setOpcode(X86::MOV32rm); break;
+    case X86::MOV64ao64: Inst.setOpcode(X86::MOV64rm); break;
+    case X86::MOV8o64a:  Inst.setOpcode(X86::MOV8mr); break;
+    case X86::MOV16o64a: Inst.setOpcode(X86::MOV16mr); break;
+    case X86::MOV32o64a: Inst.setOpcode(X86::MOV32mr); break;
+    case X86::MOV64o64a: Inst.setOpcode(X86::MOV64mr); break;
+    }
+    return true;
+  }
   }
 }
 

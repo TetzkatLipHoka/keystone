@@ -321,7 +321,8 @@ EmitImmediate(const MCInst &MI, const MCOperand &DispOp, SMLoc Loc, unsigned Siz
         FixupKind != FK_PCRel_2 &&
         FixupKind != FK_PCRel_4 &&
         FixupKind != FK_PCRel_4 &&
-        (FixupKind != MCFixupKind(X86::reloc_riprel_4byte) || !RIP_rel)) {
+        (FixupKind != MCFixupKind(X86::reloc_riprel_4byte) &&
+         FixupKind != MCFixupKind(X86::reloc_riprel_4byte_movq_load) || !RIP_rel)) {
       EmitConstant(DispOp.getImm(), Size, CurByte, OS);
       return;
     }
