@@ -87,19 +87,27 @@ SourceMgr::getLineAndColumn(SMLoc Loc, unsigned BufferID) const {
   const char *BufStart = Buff->getBufferStart();
   const char *Ptr = BufStart;
 
+  const char *BufEnd = Buff->getBufferEnd();
+
   // If we have a line number cache, and if the query is to a later point in the
   // same file, start searching from the last query location.  This optimizes
   // for the case when multiple diagnostics come out of one file in order.
+  // Only trust the cached pointer if it actually lies within THIS buffer - a
+  // reused BufferID can leave a stale LastQuery pointing past BufEnd, which
+  // otherwise makes Ptr start beyond the buffer and the scan run into the
+  // guard page.
   if (LineNoCacheTy *Cache = getCache(LineNoCache))
     if (Cache->LastQueryBufferID == BufferID &&
+        Cache->LastQuery >= BufStart && Cache->LastQuery <= BufEnd &&
         Cache->LastQuery <= Loc.getPointer()) {
       Ptr = Cache->LastQuery;
       LineNo = Cache->LineNoOfQuery;
     }
 
   // Scan for the location being queried, keeping track of the number of lines
-  // we see.
-  for (; SMLoc::getFromPointer(Ptr) != Loc; ++Ptr)
+  // we see.  Bounded by BufEnd (< , not !=) so neither a Loc past the buffer
+  // end nor a Ptr starting past it can run the deref into the guard page.
+  for (; Ptr < BufEnd && SMLoc::getFromPointer(Ptr) != Loc; ++Ptr)
     if (*Ptr == '\n') ++LineNo;
 
   // Allocate the line number cache if it doesn't exist.
